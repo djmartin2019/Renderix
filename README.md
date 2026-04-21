@@ -42,10 +42,11 @@ Client Request
 └───────────--─┘
 ```
 
-1. A request hits **CloudFront**, which caches responses by full URL (path + query string).
-2. On a cache miss, CloudFront forwards the request to a **Lambda function**.
-3. Lambda fetches the original image from **S3**, applies the requested transformations using [Sharp](https://sharp.pixelplumbing.com/), and returns the result.
-4. CloudFront caches the transformed image. Subsequent identical requests are served from the edge.
+1. A request hits **CloudFront**, which runs a **CloudFront Function** on every viewer request.
+2. The CloudFront Function validates the HMAC-SHA256 signature and expiration, then strips `s` and `exp` from the query string before forwarding.
+3. On a cache miss, CloudFront forwards the clean request (only `w`/`h`/`f`/`q`) to a **Lambda function**.
+4. Lambda fetches the original image from **S3**, applies the requested transformations using [Sharp](https://sharp.pixelplumbing.com/), and returns the result.
+5. CloudFront caches the transformed image. Subsequent identical requests are served from the edge.
 
 ## URL API
 
@@ -80,25 +81,30 @@ Images are resized to fit within the given dimensions without upscaling or disto
 
 ## Tech Stack
 
-| Layer          | Technology                                | Purpose                                     |
-| -------------- | ----------------------------------------- | ------------------------------------------- |
-| CDN            | CloudFront                                | Edge caching, HTTPS termination             |
-| Compute        | Lambda (Node.js 20.x)                     | Image processing on demand                  |
-| Processing     | [Sharp](https://sharp.pixelplumbing.com/) | Resize, format conversion, quality control  |
-| Storage        | S3                                        | Private bucket for original images          |
-| Infrastructure | Terraform                                 | Provision and manage all AWS resources      |
-| IAM            | Least-privilege roles                     | Lambda can only read from S3 and write logs |
+| Layer          | Technology                                | Purpose                                            |
+| -------------- | ----------------------------------------- | -------------------------------------------------- |
+| CDN            | CloudFront                                | Edge caching, HTTPS termination                    |
+| Auth           | CloudFront Function (`cloudfront-js-2.0`) | HMAC-SHA256 signed URL validation at the edge      |
+| Compute        | Lambda (Node.js 20.x)                     | Image processing on demand                         |
+| Processing     | [Sharp](https://sharp.pixelplumbing.com/) | Resize, format conversion, quality control         |
+| Storage        | S3                                        | Private bucket for original images                 |
+| Infrastructure | Terraform                                 | Provision and manage all AWS resources             |
+| IAM            | Least-privilege roles                     | Lambda can only read from S3 and write logs        |
 
 ## Project Structure
 
 ```
 renderix/
+├── cloudfront-function/
+│   └── signer.js.tpl       # CloudFront Function source (secrets injected by Terraform)
 ├── lambda/
-│   ├── index.js            # Lambda handler
+│   ├── index.js            # Lambda handler (image processing)
 │   ├── package.json
 │   └── function.zip        # Deployment artifact (built locally)
+├── scripts/
+│   └── sign-url.js         # CLI helper to generate signed URLs
 ├── terraform/
-│   ├── main.tf             # S3, Lambda, CloudFront, IAM
+│   ├── main.tf             # S3, Lambda, CloudFront Function, CloudFront, IAM
 │   ├── providers.tf        # AWS provider + version constraints
 │   ├── variables.tf        # Configurable inputs
 │   └── outputs.tf          # CloudFront URL, Lambda URL, bucket name
@@ -183,7 +189,7 @@ terraform apply \
 
 ## Signed URLs
 
-All requests to the CDN must be signed. Unsigned requests are rejected at the CloudFront edge by a Lambda@Edge function before they ever reach the origin.
+All requests to the CDN must be signed. Unsigned requests are rejected at the CloudFront edge by a CloudFront Function before they ever reach the origin.
 
 ### How signing works
 
@@ -193,7 +199,7 @@ All requests to the CDN must be signed. Unsigned requests are rejected at the Cl
 4. Compute `HMAC-SHA256(secret, "/path?canonicalized_params")` and hex-encode it.
 5. Append `&s=<signature>` to the URL.
 
-The signature and expiration are stripped by the edge function before forwarding to the cache, so URLs with different expiration times share the same cache entry for the same image and transforms.
+The signature and expiration are stripped by the CloudFront Function before forwarding to the cache, so URLs with different expiration times share the same cache entry for the same image and transforms.
 
 ### Generating signed URLs
 

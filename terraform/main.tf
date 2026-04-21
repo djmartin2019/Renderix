@@ -78,62 +78,18 @@ resource "aws_lambda_function_url" "url" {
 }
 
 # ---------------------------------------------------------------------------
-# Lambda@Edge — viewer-request auth function
+# CloudFront Function — viewer-request HMAC validation
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_role" "lambda_edge_role" {
-  provider = aws.us_east_1
-  name     = "renderix-lambda-edge-role"
+resource "aws_cloudfront_function" "signer" {
+  name    = "renderix-signer"
+  runtime = "cloudfront-js-2.0"
+  publish = true
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = ["lambda.amazonaws.com", "edgelambda.amazonaws.com"]
-      }
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_edge_logs" {
-  provider   = aws.us_east_1
-  role       = aws_iam_role.lambda_edge_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# Render the template with secrets injected, write to a temp file for zipping
-resource "local_file" "edge_auth_source" {
-  content = templatefile("${path.module}/../lambda-edge/index.js.tpl", {
+  code = templatefile("${path.module}/../cloudfront-function/signer.js.tpl", {
     signing_secret          = var.signing_secret
     signing_secret_previous = var.signing_secret_previous
   })
-  filename = "${path.module}/../lambda-edge/index.js"
-}
-
-data "archive_file" "edge_auth_zip" {
-  type        = "zip"
-  source_file = local_file.edge_auth_source.filename
-  output_path = "${path.module}/../lambda-edge/function.zip"
-}
-
-resource "aws_lambda_function" "edge_auth" {
-  provider = aws.us_east_1
-
-  function_name = "renderix-edge-auth"
-  runtime       = "nodejs20.x"
-  handler       = "index.handler"
-  role          = aws_iam_role.lambda_edge_role.arn
-
-  filename         = data.archive_file.edge_auth_zip.output_path
-  source_code_hash = data.archive_file.edge_auth_zip.output_base64sha256
-
-  # Lambda@Edge requires a published version — $LATEST cannot be associated
-  publish = true
-
-  memory_size = 128
-  timeout     = 5
 }
 
 # ---------------------------------------------------------------------------
@@ -170,10 +126,9 @@ resource "aws_cloudfront_distribution" "cdn" {
       }
     }
 
-    lambda_function_association {
+    function_association {
       event_type   = "viewer-request"
-      lambda_arn   = aws_lambda_function.edge_auth.qualified_arn
-      include_body = false
+      function_arn = aws_cloudfront_function.signer.arn
     }
   }
 

@@ -6,23 +6,9 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.0"
-    }
-    archive = {
-      source  = "hashicorp/archive"
-      version = "~> 2.0"
-    }
   }
 }
 
 provider "aws" {
   region = var.aws_region
-}
-
-# Lambda@Edge functions must be deployed in us-east-1 regardless of primary region
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
 }
