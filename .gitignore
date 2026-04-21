@@ -8,3 +8,7 @@
 # Lambda
 lambda/node_modules/
 lambda/function.zip
+
+# Lambda@Edge (rendered by Terraform — contains secrets)
+lambda-edge/index.js
+lambda-edge/function.zip

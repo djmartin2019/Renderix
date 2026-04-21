@@ -24,19 +24,19 @@ Upload your originals to S3. Request any size, format, or quality via query para
 Client Request
       │
       ▼
-┌─────────────-┐    cache hit
+┌──────────────┐    cache hit
 │  CloudFront  │ ────────────► Response (fast)
 │   (CDN)      │
 └──────┬───────┘
        │ cache miss
        ▼
-┌─────────────-┐
+┌──────────────┐
 │   Lambda     │  ◄── Node.js + Sharp
 │  (process)   │
 └──────┬───────┘
        │ fetch original
        ▼
-┌───────────-──┐
+┌──────────────┐
 │     S3       │  ◄── Private bucket, originals only
 │  (storage)   │
 └───────────--─┘
@@ -168,25 +168,119 @@ curl "https://$(terraform -chdir=terraform output -raw cloudfront_url)/test.jpg?
 You can override defaults by passing variables to Terraform:
 
 ```bash
-terraform apply -var="bucket_name=my-custom-bucket" -var="aws_region=eu-west-1"
+terraform apply \
+  -var="bucket_name=my-custom-bucket" \
+  -var="aws_region=eu-west-1" \
+  -var="signing_secret=your-secret-here"
 ```
 
-| Variable      | Description                        | Default               |
-| ------------- | ---------------------------------- | --------------------- |
-| `aws_region`  | AWS region to deploy into          | `us-east-1`           |
-| `bucket_name` | S3 bucket name for original images | `renderix-cdn-images` |
+| Variable                  | Description                                                      | Default               |
+| ------------------------- | ---------------------------------------------------------------- | --------------------- |
+| `aws_region`              | AWS region to deploy into                                        | `us-east-1`           |
+| `bucket_name`             | S3 bucket name for original images                               | `renderix-cdn-images` |
+| `signing_secret`          | HMAC secret for signing image URLs (**required**)                | —                     |
+| `signing_secret_previous` | Previous secret, set during key rotation (see below). Optional. | `""`                  |
+
+## Signed URLs
+
+All requests to the CDN must be signed. Unsigned requests are rejected at the CloudFront edge by a Lambda@Edge function before they ever reach the origin.
+
+### How signing works
+
+1. Construct the image URL with your transform parameters.
+2. Add an expiration timestamp (`exp`) as a Unix timestamp in seconds.
+3. Canonicalize the parameters: lowercase all keys, sort alphabetically, exclude `s`.
+4. Compute `HMAC-SHA256(secret, "/path?canonicalized_params")` and hex-encode it.
+5. Append `&s=<signature>` to the URL.
+
+The signature and expiration are stripped by the edge function before forwarding to the cache, so URLs with different expiration times share the same cache entry for the same image and transforms.
+
+### Generating signed URLs
+
+Use the included helper script. It reads the secret from `RENDERIX_SECRET` and accepts an optional `--ttl` flag (default: 1 hour).
+
+```bash
+# Sign a URL, expires in 1 hour (default)
+RENDERIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp"
+# => /photo.jpg?exp=1714003600&f=webp&w=800&s=a3f1b2c4...
+
+# Sign a URL with a 24-hour TTL
+RENDERIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp" --ttl 86400
+```
+
+Use your CloudFront domain to build the full URL:
+
+```bash
+CDN="https://$(terraform -chdir=terraform output -raw cloudfront_url)"
+SIGNED=$(RENDERIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp")
+echo "$CDN$SIGNED"
+```
+
+### Server-side integration
+
+Sign URLs on your server — never expose the secret to the client. Example in Node.js:
+
+```js
+const crypto = require("crypto");
+
+function signUrl(path, params, secret, ttlSeconds = 3600) {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const allParams = { ...params, exp: String(exp) };
+
+  const canonical = Object.entries(allParams)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+
+  const sig = crypto
+    .createHmac("sha256", secret)
+    .update(`${path}?${canonical}`)
+    .digest("hex");
+
+  return `${path}?${canonical}&s=${sig}`;
+}
+
+// Usage
+const url = signUrl("/photo.jpg", { w: "800", f: "webp" }, process.env.RENDERIX_SECRET);
+// => /photo.jpg?exp=1714003600&f=webp&w=800&s=a3f1b2c4...
+```
+
+### Secret rotation
+
+Rotating the secret without downtime requires two deploys:
+
+**Step 1 — add the old secret as the fallback:**
+
+```bash
+terraform apply \
+  -var="signing_secret=new-secret" \
+  -var="signing_secret_previous=old-secret"
+```
+
+The edge function will now accept URLs signed by either secret.
+
+**Step 2 — update your application** to sign new URLs with `new-secret`. Wait for all previously issued URLs to expire.
+
+**Step 3 — remove the fallback:**
+
+```bash
+terraform apply \
+  -var="signing_secret=new-secret" \
+  -var="signing_secret_previous="
+```
 
 ## Roadmap
 
 These are potential improvements, not commitments. The current version is intentionally minimal.
 
-- [ ] Signed URLs / API key authentication
+- [x] Signed URLs with HMAC-SHA256 and expiration
 - [ ] Custom domain with ACM certificate
 - [ ] Processed image caching in a separate S3 bucket
-- [ ] Input validation and size limits
 - [ ] Automated Lambda packaging (CI/CD)
 - [ ] Support for crop modes (cover, contain, fill)
 - [ ] CloudFront cache invalidation endpoint
+- [ ] Rate limiting via AWS WAF
+- [ ] Secrets Manager integration for secret storage
 - [ ] Monitoring and alerting (CloudWatch dashboards)
 
 ## License

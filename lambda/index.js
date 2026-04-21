@@ -22,6 +22,8 @@ exports.handler = async (event) => {
     };
   }
 
+  const MAX_DIMENSION = 4096;
+
   const params = event.queryStringParameters || {};
   const width = params.w ? parseInt(params.w, 10) : null;
   const height = params.h ? parseInt(params.h, 10) : null;
@@ -29,6 +31,14 @@ exports.handler = async (event) => {
   const quality = params.q
     ? Math.min(Math.max(parseInt(params.q, 10), 1), 100)
     : 80;
+
+  if ((width !== null && width > MAX_DIMENSION) || (height !== null && height > MAX_DIMENSION)) {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: `Dimensions may not exceed ${MAX_DIMENSION}px` }),
+    };
+  }
 
   try {
     const response = await s3.send(

@@ -12,3 +12,9 @@ output "s3_bucket_name" {
   description = "S3 bucket for original images"
   value       = aws_s3_bucket.images.id
 }
+
+output "signing_secret" {
+  description = "Current HMAC signing secret — use this to generate signed URLs"
+  value       = var.signing_secret
+  sensitive   = true
+}
