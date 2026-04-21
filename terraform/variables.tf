@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "bucket_name" {
   description = "Name for the S3 bucket storing original images"
   type        = string
-  default     = "renderix-cdn-images"
+  default     = "rendorix-cdn-images"
 }
 
 variable "signing_secret" {

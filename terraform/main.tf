@@ -12,7 +12,7 @@ resource "aws_s3_bucket_public_access_block" "images_block" {
 }
 
 resource "aws_iam_role" "lambda_role" {
-  name = "renderix-lambda-role"
+  name = "rendorix-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -27,7 +27,7 @@ resource "aws_iam_role" "lambda_role" {
 }
 
 resource "aws_iam_policy" "lambda_s3_policy" {
-  name = "renderix-lambda-s3-read"
+  name = "rendorix-lambda-s3-read"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -52,7 +52,7 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
 }
 
 resource "aws_lambda_function" "image_processor" {
-  function_name = "renderix-image-processor"
+  function_name = "rendorix-image-processor"
 
   runtime = "nodejs20.x"
   handler = "index.handler"
@@ -82,7 +82,7 @@ resource "aws_lambda_function_url" "url" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudfront_function" "signer" {
-  name    = "renderix-signer"
+  name    = "rendorix-signer"
   runtime = "cloudfront-js-2.0"
   publish = true
 

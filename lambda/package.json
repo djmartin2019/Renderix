@@ -1,5 +1,5 @@
 {
-  "name": "renderix-lambda",
+  "name": "rendorix-lambda",
   "private": true,
   "dependencies": {
     "@aws-sdk/client-s3": "^3.750.0",

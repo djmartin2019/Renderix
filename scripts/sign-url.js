@@ -2,13 +2,13 @@
 "use strict";
 
 /**
- * Renderix URL Signer
+ * Rendorix URL Signer
  *
  * Generates a signed image URL with an expiration timestamp.
  *
  * Usage:
- *   RENDERIX_SECRET=mysecret node scripts/sign-url.js "/photo.jpg?w=800&f=webp"
- *   RENDERIX_SECRET=mysecret node scripts/sign-url.js "/photo.jpg?w=800&f=webp" --ttl 86400
+ *   RENDORIX_SECRET=mysecret node scripts/sign-url.js "/photo.jpg?w=800&f=webp"
+ *   RENDORIX_SECRET=mysecret node scripts/sign-url.js "/photo.jpg?w=800&f=webp" --ttl 86400
  *
  * Options:
  *   --ttl <seconds>   URL lifetime in seconds (default: 3600 = 1 hour)
@@ -25,7 +25,7 @@ const MAX_DIMENSION = 4096;
 
 function usage() {
   console.error(
-    'Usage: RENDERIX_SECRET=<secret> node sign-url.js "<path?params>" [--ttl <seconds>]'
+    'Usage: RENDORIX_SECRET=<secret> node sign-url.js "<path?params>" [--ttl <seconds>]'
   );
   process.exit(1);
 }
@@ -119,9 +119,9 @@ function signUrl(rawUrl, secret, ttl) {
 
 // --- Main ---
 
-const secret = process.env.RENDERIX_SECRET;
+const secret = process.env.RENDORIX_SECRET;
 if (!secret) {
-  console.error("Error: RENDERIX_SECRET environment variable is not set");
+  console.error("Error: RENDORIX_SECRET environment variable is not set");
   process.exit(1);
 }
 

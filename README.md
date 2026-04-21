@@ -1,4 +1,4 @@
-# Renderix
+# Rendorix
 
 ![AWS](https://img.shields.io/badge/AWS-%23FF9900?style=flat&logo=amazonwebservices&logoColor=white)
 ![Terraform](https://img.shields.io/badge/Terraform-%235835CC?style=flat&logo=terraform&logoColor=white)
@@ -10,13 +10,13 @@
 
 Turn any S3 bucket into an on-demand image CDN.
 
-Renderix is a lightweight image delivery service built on AWS. It lets you resize, convert, and optimize images on the fly through a simple URL-based API — no SDK, no pre-processing, no manual optimization.
+Rendorix is a lightweight image delivery service built on AWS. It lets you resize, convert, and optimize images on the fly through a simple URL-based API — no SDK, no pre-processing, no manual optimization.
 
 ```
 https://your-cdn.cloudfront.net/photos/hero.jpg?w=800&f=webp&q=80
 ```
 
-Upload your originals to S3. Request any size, format, or quality via query parameters. Renderix handles the rest.
+Upload your originals to S3. Request any size, format, or quality via query parameters. Rendorix handles the rest.
 
 ## How It Works
 
@@ -94,7 +94,7 @@ Images are resized to fit within the given dimensions without upscaling or disto
 ## Project Structure
 
 ```
-renderix/
+rendorix/
 ├── cloudfront-function/
 │   └── signer.js.tpl       # CloudFront Function source (secrets injected by Terraform)
 ├── lambda/
@@ -183,7 +183,7 @@ terraform apply \
 | Variable                  | Description                                                      | Default               |
 | ------------------------- | ---------------------------------------------------------------- | --------------------- |
 | `aws_region`              | AWS region to deploy into                                        | `us-east-1`           |
-| `bucket_name`             | S3 bucket name for original images                               | `renderix-cdn-images` |
+| `bucket_name`             | S3 bucket name for original images                               | `rendorix-cdn-images` |
 | `signing_secret`          | HMAC secret for signing image URLs (**required**)                | —                     |
 | `signing_secret_previous` | Previous secret, set during key rotation (see below). Optional. | `""`                  |
 
@@ -203,22 +203,22 @@ The signature and expiration are stripped by the CloudFront Function before forw
 
 ### Generating signed URLs
 
-Use the included helper script. It reads the secret from `RENDERIX_SECRET` and accepts an optional `--ttl` flag (default: 1 hour).
+Use the included helper script. It reads the secret from `RENDORIX_SECRET` and accepts an optional `--ttl` flag (default: 1 hour).
 
 ```bash
 # Sign a URL, expires in 1 hour (default)
-RENDERIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp"
+RENDORIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp"
 # => /photo.jpg?exp=1714003600&f=webp&w=800&s=a3f1b2c4...
 
 # Sign a URL with a 24-hour TTL
-RENDERIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp" --ttl 86400
+RENDORIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp" --ttl 86400
 ```
 
 Use your CloudFront domain to build the full URL:
 
 ```bash
 CDN="https://$(terraform -chdir=terraform output -raw cloudfront_url)"
-SIGNED=$(RENDERIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp")
+SIGNED=$(RENDORIX_SECRET=your-secret node scripts/sign-url.js "/photo.jpg?w=800&f=webp")
 echo "$CDN$SIGNED"
 ```
 
@@ -247,7 +247,7 @@ function signUrl(path, params, secret, ttlSeconds = 3600) {
 }
 
 // Usage
-const url = signUrl("/photo.jpg", { w: "800", f: "webp" }, process.env.RENDERIX_SECRET);
+const url = signUrl("/photo.jpg", { w: "800", f: "webp" }, process.env.RENDORIX_SECRET);
 // => /photo.jpg?exp=1714003600&f=webp&w=800&s=a3f1b2c4...
 ```
 
