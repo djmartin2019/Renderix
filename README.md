@@ -8,15 +8,31 @@
 ![S3](https://img.shields.io/badge/Amazon_S3-%23569A31?style=flat&logo=amazons3&logoColor=white)
 ![CloudFront](https://img.shields.io/badge/CloudFront-CDN-%238C4FFF?style=flat&logo=amazonwebservices&logoColor=white)
 
-Turn any S3 bucket into an on-demand image CDN.
+**Stop thinking about image optimization.**
 
-Rendorix is a lightweight image delivery service built on AWS. It lets you resize, convert, and optimize images on the fly through a simple URL-based API — no SDK, no pre-processing, no manual optimization.
+Rendorix is a developer-first image CDN: upload originals to S3, request transforms through the URL, cache at the edge. The long-term direction is **presets over parameters** — define roles like `hero`, `card`, and `avatar` once, then call `/photo.jpg?p=hero` instead of juggling `w`, `q`, and `f` on every tag.
 
-```
-https://your-cdn.cloudfront.net/photos/hero.jpg?w=800&f=webp&q=80
-```
+For the full product story (problem, philosophy, planned DX), see [`Marketing.md`](Marketing.md).
 
-Upload your originals to S3. Request any size, format, or quality via query parameters. Rendorix handles the rest.
+### What ships in this repo today
+
+- **AWS stack:** CloudFront → CloudFront Function (signed URL validation) → Lambda (Sharp) → private S3.
+- **Transforms:** query parameters `w`, `h`, `f`, `q` with HMAC-signed URLs (`exp` + `s`).
+- **CLI:** [`scripts/sign-url.js`](scripts/sign-url.js) for generating signed paths.
+
+### Where we’re headed
+
+- Semantic **presets** (`p=hero`) mapped to shared transform definitions.
+- A small **JavaScript helper** that builds signed URLs (and eventually preset-based URLs) so apps don’t reimplement signing.
+- Optional **composable** presets and framework-focused guides.
+
+---
+
+## Why Rendorix
+
+Image tuning shouldn’t be a micro-decision on every `<img>`. The goal is **constraints over chaos** — a small set of named recipes your whole team shares, plus infrastructure that stays minimal: no heavy dashboard, no SDK required for the core HTTP API.
+
+---
 
 ## How It Works
 
@@ -44,22 +60,26 @@ Client Request
 
 1. A request hits **CloudFront**, which runs a **CloudFront Function** on every viewer request.
 2. The CloudFront Function validates the HMAC-SHA256 signature and expiration, then strips `s` and `exp` from the query string before forwarding.
-3. On a cache miss, CloudFront forwards the clean request (only `w`/`h`/`f`/`q`) to a **Lambda function**.
+3. On a cache miss, CloudFront forwards the clean request (transform params only — today `w`/`h`/`f`/`q`) to a **Lambda function**.
 4. Lambda fetches the original image from **S3**, applies the requested transformations using [Sharp](https://sharp.pixelplumbing.com/), and returns the result.
 5. CloudFront caches the transformed image. Subsequent identical requests are served from the edge.
 
-## URL API
+---
 
-The image path maps directly to the S3 object key. Transformations are controlled via query parameters:
+## URL API (current)
 
-| Parameter | Description      | Example  | Default         |
-| --------- | ---------------- | -------- | --------------- |
-| `w`       | Width in pixels  | `w=800`  | Original width  |
-| `h`       | Height in pixels | `h=600`  | Original height |
-| `f`       | Output format    | `f=webp` | `jpeg`          |
-| `q`       | Quality (1–100)  | `q=80`   | `80`            |
+The image path maps directly to the S3 object key. Transformations use query parameters:
+
+| Parameter | Description      | Example  | Default          |
+| --------- | ---------------- | -------- | ---------------- |
+| `w`       | Width in pixels  | `w=800`  | Original width   |
+| `h`       | Height in pixels | `h=600`  | Original height  |
+| `f`       | Output format    | `f=webp` | `jpeg`           |
+| `q`       | Quality (1–100)  | `q=80`   | `80`             |
 
 **Supported formats:** `jpeg`, `webp`, `png`, `avif`
+
+**Roadmap:** preset-based URLs such as `?p=hero` that resolve to curated width, quality, and format — see [`Marketing.md`](Marketing.md).
 
 ### Examples
 
@@ -79,17 +99,21 @@ The image path maps directly to the S3 object key. Transformations are controlle
 
 Images are resized to fit within the given dimensions without upscaling or distorting aspect ratio.
 
+---
+
 ## Tech Stack
 
-| Layer          | Technology                                | Purpose                                            |
-| -------------- | ----------------------------------------- | -------------------------------------------------- |
-| CDN            | CloudFront                                | Edge caching, HTTPS termination                    |
-| Auth           | CloudFront Function (`cloudfront-js-2.0`) | HMAC-SHA256 signed URL validation at the edge      |
-| Compute        | Lambda (Node.js 20.x)                     | Image processing on demand                         |
-| Processing     | [Sharp](https://sharp.pixelplumbing.com/) | Resize, format conversion, quality control         |
-| Storage        | S3                                        | Private bucket for original images                 |
-| Infrastructure | Terraform                                 | Provision and manage all AWS resources             |
-| IAM            | Least-privilege roles                     | Lambda can only read from S3 and write logs        |
+| Layer          | Technology                                | Purpose                                       |
+| -------------- | ----------------------------------------- | --------------------------------------------- |
+| CDN            | CloudFront                                | Edge caching, HTTPS termination               |
+| Auth           | CloudFront Function (`cloudfront-js-2.0`) | HMAC-SHA256 signed URL validation at the edge |
+| Compute        | Lambda (Node.js 20.x)                     | Image processing on demand                    |
+| Processing     | [Sharp](https://sharp.pixelplumbing.com/) | Resize, format conversion, quality control    |
+| Storage        | S3                                        | Private bucket for original images            |
+| Infrastructure | Terraform                                 | Provision and manage all AWS resources        |
+| IAM            | Least-privilege roles                     | Lambda can only read from S3 and write logs   |
+
+---
 
 ## Project Structure
 
@@ -108,9 +132,12 @@ rendorix/
 │   ├── providers.tf        # AWS provider + version constraints
 │   ├── variables.tf        # Configurable inputs
 │   └── outputs.tf          # CloudFront URL, Lambda URL, bucket name
+├── Marketing.md            # Positioning, vision, planned DX
 ├── .gitignore
 └── README.md
 ```
+
+---
 
 ## Getting Started
 
@@ -169,6 +196,8 @@ aws s3 cp test.jpg s3://$(terraform -chdir=terraform output -raw s3_bucket_name)
 curl "https://$(terraform -chdir=terraform output -raw cloudfront_url)/test.jpg?w=400&f=webp&q=80" --output test-400.webp
 ```
 
+*(Production use requires signing the URL first — see **Signed URLs** below.)*
+
 ### Configuration
 
 You can override defaults by passing variables to Terraform:
@@ -180,12 +209,14 @@ terraform apply \
   -var="signing_secret=your-secret-here"
 ```
 
-| Variable                  | Description                                                      | Default               |
-| ------------------------- | ---------------------------------------------------------------- | --------------------- |
-| `aws_region`              | AWS region to deploy into                                        | `us-east-1`           |
-| `bucket_name`             | S3 bucket name for original images                               | `rendorix-cdn-images` |
-| `signing_secret`          | HMAC secret for signing image URLs (**required**)                | —                     |
-| `signing_secret_previous` | Previous secret, set during key rotation (see below). Optional. | `""`                  |
+| Variable                    | Description                                                      | Default               |
+| --------------------------- | ---------------------------------------------------------------- | --------------------- |
+| `aws_region`                | AWS region to deploy into                                        | `us-east-1`           |
+| `bucket_name`               | S3 bucket name for original images                               | `rendorix-cdn-images` |
+| `signing_secret`            | HMAC secret for signing image URLs (**required**)                | —                     |
+| `signing_secret_previous`   | Previous secret, set during key rotation (see below). Optional. | `""`                  |
+
+---
 
 ## Signed URLs
 
@@ -263,7 +294,7 @@ terraform apply \
   -var="signing_secret_previous=old-secret"
 ```
 
-The edge function will now accept URLs signed by either secret.
+The CloudFront Function will now accept URLs signed by either secret.
 
 **Step 2 — update your application** to sign new URLs with `new-secret`. Wait for all previously issued URLs to expire.
 
@@ -275,19 +306,32 @@ terraform apply \
   -var="signing_secret_previous="
 ```
 
+---
+
 ## Roadmap
 
-These are potential improvements, not commitments. The current version is intentionally minimal.
+Ideas and direction — not a committed schedule. **Infrastructure** and **product** tracks:
+
+**Product / DX**
 
 - [x] Signed URLs with HMAC-SHA256 and expiration
+- [ ] **Presets** (`p=hero`) backed by shared transform definitions
+- [ ] **JavaScript helper** for URL building and signing (aligns with [`Marketing.md`](Marketing.md))
+- [ ] Composable or chained presets
+- [ ] Framework notes (Astro, Next.js, etc.)
+
+**Infrastructure**
+
 - [ ] Custom domain with ACM certificate
-- [ ] Processed image caching in a separate S3 bucket
+- [ ] Processed image caching in a separate S3 bucket (optional)
 - [ ] Automated Lambda packaging (CI/CD)
-- [ ] Support for crop modes (cover, contain, fill)
-- [ ] CloudFront cache invalidation endpoint
+- [ ] Additional transform modes (e.g. crop cover / contain / fill) if needed beyond presets
+- [ ] CloudFront cache invalidation workflow
 - [ ] Rate limiting via AWS WAF
-- [ ] Secrets Manager integration for secret storage
-- [ ] Monitoring and alerting (CloudWatch dashboards)
+- [ ] Secrets Manager (or similar) for signing secrets
+- [ ] Monitoring and alerting (CloudWatch)
+
+---
 
 ## License
 
