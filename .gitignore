@@ -1,3 +1,7 @@
+# JS client build output and dependencies
+/node_modules/
+/dist/
+
 # Terraform
 .terraform/
 *.tfstate
