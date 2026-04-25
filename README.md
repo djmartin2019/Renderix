@@ -141,10 +141,10 @@ The `@rendorix/client` package is a server-side TypeScript library. It resolves 
 
 ```bash
 # Pin to a tag (recommended for stability)
-npm install github:davidmrtnz/rendorix#v0.0.1
+npm install github:djmartin2019/Rendorix#v0.0.1
 
 # Or track main
-npm install github:davidmrtnz/rendorix#main
+npm install github:djmartin2019/Rendorix#main
 ```
 
 npm runs the `prepare` script on install, which compiles the TypeScript source — no committed build output required.

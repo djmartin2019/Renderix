@@ -26,7 +26,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/davidmrtnz/rendorix.git"
+    "url": "https://github.com/djmartin2019/Rendorix.git"
   },
   "engines": {
     "node": ">=18"
